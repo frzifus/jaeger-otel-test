@@ -1,0 +1,60 @@
+version: '3.3'
+
+networks:
+  back:
+     driver: bridge
+
+services:
+
+  app:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    command: ["-address.agent=jaeger-agent:6831"]
+    networks:
+      - back
+    depends_on:
+      - jaeger-query
+
+  jaeger-collector:
+    image: jaegertracing/jaeger-collector
+    command: ["--cassandra.keyspace=jaeger_v1_dc1", "--cassandra.servers=cassandra", "--collector.zipkin.http-port=9411"]
+    restart: on-failure
+    depends_on:
+      - cassandra-schema
+    networks:
+      - back
+
+  jaeger-query:
+    image: jaegertracing/jaeger-query
+    command: ["--cassandra.keyspace=jaeger_v1_dc1", "--cassandra.servers=cassandra"]
+    ports:
+      - "127.0.0.1:8080:16686"
+    restart: on-failure
+    depends_on:
+      - cassandra-schema
+    networks:
+      - back
+
+  jaeger-agent:
+    image: jaegertracing/jaeger-agent
+    command: ["--reporter.grpc.host-port=jaeger-collector:14250"]
+    ports:
+      - "127.0.0.1:6831:6831/udp"
+    restart: on-failure
+    depends_on:
+      - jaeger-collector
+    networks:
+      - back
+
+  cassandra:
+    image: cassandra:3.9
+    networks:
+      - back
+
+  cassandra-schema:
+    image: jaegertracing/jaeger-cassandra-schema
+    depends_on:
+      - cassandra
+    networks:
+      - back
