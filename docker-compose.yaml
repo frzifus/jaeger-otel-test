@@ -10,7 +10,7 @@ services:
     build:
       context: .
       dockerfile: ./Dockerfile
-    command: ["-address.agent=jaeger-agent:6831"]
+    command: ["-address.host=jaeger-agent", "-address.port=6831"]
     networks:
       - back
     depends_on:
@@ -18,7 +18,7 @@ services:
 
   jaeger-collector:
     image: jaegertracing/jaeger-collector
-    command: ["--cassandra.keyspace=jaeger_v1_dc1", "--cassandra.servers=cassandra", "--collector.zipkin.http-port=9411"]
+    command: ["--cassandra.keyspace=jaeger_v1_dc1", "--cassandra.servers=cassandra"]
     restart: on-failure
     depends_on:
       - cassandra-schema
@@ -35,6 +35,9 @@ services:
       - cassandra-schema
     networks:
       - back
+    environment:
+      - JAEGER_AGENT_HOST=jaeger-agent
+      - JAEGER_AGENT_PORT=6831
 
   jaeger-agent:
     image: jaegertracing/jaeger-agent
