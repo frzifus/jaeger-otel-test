@@ -8,42 +8,46 @@ import (
 	"strconv"
 	"time"
 
-	"go.opentelemetry.io/otel/api/global"
-	"go.opentelemetry.io/otel/exporter/trace/jaeger"
-	"go.opentelemetry.io/otel/exporter/trace/stdout"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const nicerDicer string = "nicer.dicer/3000"
 
 func main() {
 	var (
-		agentAddr = flag.String("address.agent", "127.0.0.1:6831", "jaeger-agent address")
+		agentHost = flag.String("address.host", "127.0.0.1", "jaeger-agent address")
+		agentPort = flag.String("address.port", "8631", "jaeger-port address")
 	)
 	flag.Parse()
-	stdExporter, err := stdout.NewExporter(stdout.Options{PrettyPrint: true})
+	stdExporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	opts := []sdktrace.ProviderOption{
-		sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.AlwaysSample()}),
+	opts := []sdktrace.TracerProviderOption{
 		sdktrace.WithSyncer(stdExporter),
 	}
 
-	if *agentAddr != "" {
-		jaegerExporter, err := jaeger.NewExporter(jaeger.WithAgentEndpoint(*agentAddr))
+	if *agentHost != "" && *agentPort != "" {
+		log.Printf("Host: %s, Port: %s", *agentHost, *agentPort)
+		jaegerExporter, err := jaeger.New(jaeger.WithAgentEndpoint(
+			jaeger.WithAgentHost(*agentHost),
+			jaeger.WithAgentPort(*agentPort),
+		),
+		)
 		if err != nil {
 			log.Fatal(err)
 		}
 		opts = append(opts, sdktrace.WithSyncer(jaegerExporter))
 	}
 
-	tp, err := sdktrace.NewProvider(opts...)
-	if err != nil {
-		log.Fatal(err)
-	}
-	global.SetTraceProvider(tp)
+	tp := sdktrace.NewTracerProvider(opts...)
+
+	otel.SetTracerProvider(tp)
 
 	gopherit := func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -59,15 +63,17 @@ func main() {
 }
 
 func run(ctx context.Context) error {
-	tracer := global.TraceProvider().Tracer(nicerDicer)
-	return tracer.WithSpan(ctx, "wrapper", workerStart(ctx, 1+rand.Intn(5)))
+	tracer := otel.GetTracerProvider().Tracer(nicerDicer)
+	ctx, span := tracer.Start(ctx, "wrapper", trace.WithSpanKind(trace.SpanKindInternal))
+	defer span.End()
+	return workerStart(ctx, 1+rand.Intn(5))(ctx)
 }
 
 type worker func(context.Context) error
 
 func workerStart(ctx context.Context, maxDepth int) worker {
 	depth := maxDepth
-	tracer := global.TraceProvider().Tracer(nicerDicer)
+	tracer := otel.GetTracerProvider().Tracer(nicerDicer)
 	var fn worker
 	fn = func(ctx context.Context) error {
 		time.Sleep(time.Second * time.Duration(1+rand.Intn(5)))
@@ -76,7 +82,9 @@ func workerStart(ctx context.Context, maxDepth int) worker {
 			return nil
 		}
 		depth--
-		return tracer.WithSpan(ctx, "dive_"+strconv.Itoa(depth), fn)
+		ctx, span := tracer.Start(ctx, "dive_"+strconv.Itoa(depth), trace.WithSpanKind(trace.SpanKindInternal))
+		defer span.End()
+		return fn(ctx)
 	}
 	return fn
 }
