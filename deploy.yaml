@@ -17,3 +17,6 @@ spec:
       - name: myapp
         image: acme/myapp:myversion
         args: ["-address.host=localhost", "-address.port=6831"]
+        env:
+          - name: OTEL_SERVICE_NAME
+            value: "frzifus-otel-test"
