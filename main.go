@@ -19,8 +19,8 @@ const nicerDicer string = "nicer.dicer/3000"
 
 func main() {
 	var (
-		agentHost = flag.String("address.host", "127.0.0.1", "jaeger-agent address")
-		agentPort = flag.String("address.port", "8631", "jaeger-port address")
+		agentHost = flag.String("address.host", "localhost", "jaeger-agent address")
+		agentPort = flag.String("address.port", "6831", "jaeger-port address")
 	)
 	flag.Parse()
 	stdExporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
