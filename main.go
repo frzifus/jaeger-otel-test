@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"math/rand"
 	"strconv"
@@ -10,17 +11,23 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/jaeger"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 const nicerDicer string = "nicer.dicer/3000"
 
 func main() {
 	var (
-		agentHost = flag.String("address.host", "localhost", "jaeger-agent address")
-		agentPort = flag.String("address.port", "6831", "jaeger-port address")
+		jaegerAgentHost = flag.String("jaeger.agent.host", "", "jaeger-agent address")
+		jaegerAgentPort = flag.String("jaeger.agent.port", "6831", "jaeger-port address")
+
+		otelAgentHost = flag.String("otel.agent.host", "", "otel collector address")
+		otelAgentPort = flag.String("otel.agent.port", "4317", "otel grpc port")
 	)
 	flag.Parse()
 	stdExporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
@@ -32,17 +39,37 @@ func main() {
 		sdktrace.WithSyncer(stdExporter),
 	}
 
-	if *agentHost != "" && *agentPort != "" {
-		log.Printf("Host: %s, Port: %s", *agentHost, *agentPort)
+	if *jaegerAgentHost != "" && *jaegerAgentPort != "" {
+		log.Printf("Jaeger: host %s, port: %s", *jaegerAgentHost, *jaegerAgentPort)
 		jaegerExporter, err := jaeger.New(jaeger.WithAgentEndpoint(
-			jaeger.WithAgentHost(*agentHost),
-			jaeger.WithAgentPort(*agentPort),
-		),
-		)
+			jaeger.WithAgentHost(*jaegerAgentHost),
+			jaeger.WithAgentPort(*jaegerAgentPort),
+		))
 		if err != nil {
 			log.Fatal(err)
 		}
 		opts = append(opts, sdktrace.WithSyncer(jaegerExporter))
+	}
+
+	if *otelAgentHost != "" && *otelAgentPort != "" {
+		log.Printf("Otel: host %s, port: %s", *otelAgentHost, *otelAgentPort)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		grpcOptions := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock()}
+		target := fmt.Sprintf("%s:%s", *otelAgentHost, *otelAgentPort)
+		conn, err := grpc.DialContext(ctx, target, grpcOptions...)
+		if err != nil {
+			log.Fatalf("failed to create gRPC connection to collector: %w", err)
+		}
+		defer conn.Close()
+
+		// Set up a trace exporter
+		otelExporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithGRPCConn(conn))
+		if err != nil {
+			log.Fatalf("failed to create trace exporter: %w", err)
+		}
+		opts = append(opts, sdktrace.WithSyncer(otelExporter))
 	}
 
 	tp := sdktrace.NewTracerProvider(opts...)
