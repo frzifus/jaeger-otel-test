@@ -10,7 +10,7 @@ services:
     build:
       context: .
       dockerfile: ./Dockerfile
-    command: ["-address.host=jaeger-agent", "-address.port=6831"]
+    command: ["-jaeger.agent.host=jaeger-agent", "-jaeger.agent.port=6831"]
     networks:
       - back
     depends_on:
