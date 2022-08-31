@@ -15,8 +15,8 @@ spec:
     spec:
       containers:
       - name: myapp
-        image: acme/myapp:myversion
-        args: ["-address.host=localhost", "-address.port=6831"]
+        image: ghcr.io/frzifus/jaeger-otel-test:latest
+        args: ["-jaeger.agent.host=localhost", "-jaeger.agent.port=6831"]
         env:
           - name: OTEL_SERVICE_NAME
             value: "frzifus-otel-test"
