@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/jaeger"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -17,6 +21,13 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+)
+
+var (
+	opsProcessed = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "myapp_generated_traces_total",
+		Help: "The total number generated traces",
+	})
 )
 
 const nicerDicer string = "nicer.dicer/3000"
@@ -84,9 +95,28 @@ func main() {
 		}
 	}
 
-	for {
-		gopherit()
+	go func() {
+		for {
+			gopherit()
+			opsProcessed.Inc()
+		}
+	}()
+
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	const timeout = 30 * time.Second
+	srv := http.Server{
+		Addr:         "0.0.0.0:2112",
+		Handler:      mux,
+		ReadTimeout:  timeout,
+		WriteTimeout: timeout,
+		IdleTimeout:  timeout,
 	}
+
+	if err := srv.ListenAndServe(); err != nil {
+		log.Fatalln(err)
+	}
+	log.Println("shutdown...")
 }
 
 func run(ctx context.Context) error {
